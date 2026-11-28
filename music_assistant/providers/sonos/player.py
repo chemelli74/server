@@ -1113,6 +1113,7 @@ class SonosPlayer(PlayerProtocol):
         Hand the source of a queue item the speaker failed to play over to the next track.
 
         A queue in flow mode has no next track on the speaker: its stream restarts instead.
+        Nothing is released while the queue restarts the load the item is from.
 
         :param wire_item_id: The failed item's id as the speaker reports it.
         """
@@ -1129,6 +1130,15 @@ class SonosPlayer(PlayerProtocol):
         if self._plays_flow_item_as(wire_item_id):
             # a speaker that fails on the stream stops, as on its own play after a pause
             self._restart_flow_stream()
+            return
+        queue_data = self.mass.player_queues.queue_data_or_none(queue_id)
+        if (
+            queue_data is not None
+            and self._loaded_session_id is not None
+            and queue_data.flow_restarted_session_id == self._loaded_session_id
+        ):
+            # a lost radio or live stream that the queue restarts: what its source holds now
+            # may be the restart's own
             return
         # the speaker moves on to the next track by itself, while the failed track's
         # source may still be filling its buffer and holding the stream slot that
@@ -1147,7 +1157,7 @@ class SonosPlayer(PlayerProtocol):
 
     def on_cloud_queue_read(self, reason: str | None, wire_item_id: str | None) -> None:
         """
-        Act on why the speaker reads its cloud queue, while it plays a queue in flow mode.
+        Act on why the speaker reads its cloud queue, for a stream without an end that it plays.
 
         :param reason: The reason the speaker gives for the request.
         :param wire_item_id: The item it asks about, as the speaker reports it.
@@ -1155,9 +1165,12 @@ class SonosPlayer(PlayerProtocol):
         if (
             not wire_item_id
             or not self.from_current_load(wire_item_id)
-            or not self._plays_flow_item_as(wire_item_id)
             or not (queue_id := self.cloud_queue_id)
         ):
+            return
+        if not self._plays_flow_item_as(wire_item_id):
+            if reason == "queueCompleted":
+                self._restart_endless_item(queue_id, self.served_item_id(wire_item_id))
             return
         if reason == "queueCompleted":
             # the stream ended, was cut or stalled, and the speaker does not ask for it
@@ -2405,6 +2418,20 @@ class SonosPlayer(PlayerProtocol):
             return
         if flow_media is not None and queue_id and flow_media.queue_session_id:
             self.mass.player_queues.restart_lost_flow_stream(queue_id, flow_media.queue_session_id)
+
+    def _restart_endless_item(self, queue_id: str, queue_item_id: str) -> None:
+        """Restart a radio station or live source the speaker played its cloud queue out on."""
+        # such a stream never ends by itself: the speaker lost it (it stops reading an
+        # uncompressed stream after 4 GB) and pauses once it played what it holds
+        queue_item = self.mass.player_queues.get_item(queue_id, queue_item_id)
+        if (
+            queue_item is not None
+            and queue_item.media_type in (MediaType.RADIO, MediaType.AUDIO_SOURCE)
+            and self._loaded_session_id
+        ):
+            self.mass.player_queues.restart_lost_flow_stream(
+                queue_id, self._loaded_session_id, queue_item_id=queue_item_id
+            )
 
     def _awaits_flow_resume(self, group: SonosGroup, was_playing: bool) -> bool:
         """
