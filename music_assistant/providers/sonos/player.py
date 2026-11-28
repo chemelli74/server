@@ -2493,9 +2493,11 @@ class SonosPlayer(PlayerProtocol):
         self._forget_queue()
         flow_queue_id = media.source_id if media.source_id and media.queue_item_id else None
         self._flow_queue_id = flow_queue_id
-        # enforce AAC here because Sonos really does not support FLAC streams without duration
         stream_url = await self.provider.mass.streams.resolve_stream_url(self.protocol_id, media)
-        stream_url = stream_url.replace(".flac", ".aac").replace(".wav", ".aac")
+        if media.media_type == MediaType.AUDIO_SOURCE:
+            # the speaker plays no lossless stream without an end from its stream url,
+            # so a live source is asked for as MP3
+            stream_url = stream_url.replace(".flac", ".mp3").replace(".wav", ".mp3")
         if media.source_id and media.queue_item_id:
             object_id = f"mass:{media.source_id}:{media.queue_item_id}"
         else:

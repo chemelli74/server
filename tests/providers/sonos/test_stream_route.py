@@ -246,11 +246,23 @@ async def test_a_compressed_queue_in_flow_mode_plays_over_the_stream_url(
     assert player._playing_queue_id() == QUEUE_ID
 
 
-async def test_media_that_is_no_queue_item_keeps_its_stream_in_aac(
+@pytest.mark.parametrize(
+    ("playback_quality", "live_sources_uncompressed"),
+    [
+        (None, True),
+        ("lossless_compressed", False),
+        ("compressed", False),
+    ],
+)
+async def test_a_live_source_on_the_speaker_itself_plays_its_stream_as_mp3(
     monkeypatch: pytest.MonkeyPatch,
+    playback_quality: str | None,
+    live_sources_uncompressed: bool,
 ) -> None:
-    """A live source that plays on the player itself still goes over the stream url as AAC."""
-    player, group = _make_speaker(monkeypatch, live_sources_uncompressed=True)
+    """A live source that plays on the player itself goes over the stream url as MP3."""
+    player, group = _make_speaker(
+        monkeypatch, playback_quality, live_sources_uncompressed=live_sources_uncompressed
+    )
     media = PlayerMedia(
         uri="plugin://audio_source/line_in",
         media_type=MediaType.AUDIO_SOURCE,
@@ -263,8 +275,28 @@ async def test_media_that_is_no_queue_item_keeps_its_stream_in_aac(
 
     group.play_cloud_queue.assert_not_awaited()
     assert group.play_stream_url.await_args.args[0] == (
-        f"{BASE_URL}/source/source-session/line_in/sonos_player.aac"
+        f"{BASE_URL}/source/source-session/line_in/sonos_player.mp3"
     )
+
+
+async def test_a_universal_group_stream_keeps_the_codec_of_its_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stream of a universal group the speaker is a member of plays as its group sends it."""
+    player, group = _make_speaker(monkeypatch)
+    ugp_url = f"{BASE_URL}/ugp/ugp_group.flac?player_id=sonos_player"
+    media = PlayerMedia(
+        uri=ugp_url,
+        media_type=MediaType.FLOW_STREAM,
+        title="Group",
+        source_id="ugp_group",
+        queue_session_id="ugp-session",
+    )
+
+    await player.play_media(media)
+
+    group.play_cloud_queue.assert_not_awaited()
+    assert group.play_stream_url.await_args.args[0] == ugp_url
 
 
 async def test_an_announcement_at_the_compressed_level_plays_out_of_the_cloud_queue(
