@@ -11,10 +11,6 @@ ARG PYTHON_VERSION=3.14
 
 FROM python:${PYTHON_VERSION}-slim-trixie AS ffmpeg-builder
 
-# Enable non-free and contrib repositories for FDK-AAC and other codecs
-# (trixie uses the deb822 sources format)
-RUN sed -i 's/^Components: .*/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources
-
 # Install build dependencies for FFmpeg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -24,7 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     # Audio codec libraries
-    libfdk-aac-dev \
     libmp3lame-dev \
     libopus-dev \
     libvorbis-dev \
@@ -70,10 +65,8 @@ RUN set -x \
     && ./configure \
         --prefix=/usr/local \
         --enable-gpl \
-        --enable-nonfree \
         --enable-version3 \
         # Audio codecs (comprehensive support)
-        --enable-libfdk-aac \
         --enable-libmp3lame \
         --enable-libopus \
         --enable-libvorbis \
@@ -189,10 +182,6 @@ FROM python:${PYTHON_VERSION}-slim-trixie
 # Ensure UTF-8 encoding across system
 ENV LANG=C.UTF-8
 
-# Enable non-free and contrib repositories for codec libraries
-# (trixie uses the deb822 sources format)
-RUN sed -i 's/^Components: .*/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources
-
 # Install runtime dependencies
 RUN set -x \
     && apt-get update \
@@ -219,7 +208,6 @@ RUN set -x \
         # libchromaprint needed for AcoustID fingerprinting (acoustid_lookup)
         libchromaprint1 \
         # Audio codec runtime libraries (needed for FFmpeg)
-        libfdk-aac2 \
         libmp3lame0 \
         libopus0 \
         libvorbis0a \
